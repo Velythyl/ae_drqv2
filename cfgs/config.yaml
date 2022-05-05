@@ -54,8 +54,7 @@ hydra:
   run:
     dir: ./exp_local/${now:%Y.%m.%d}/${now:%H%M%S}_${hydra.job.override_dirname}
   sweep:
-    dir: ./exp/${now:%Y.%m.%d}/${now:%H%M}
-    subdir: ${hydra.job.override_dirname}
+    dir: ./exp/${now:%Y.%m.%d}/${now:%H%M}_${hydra.job.override_dirname}
   launcher:
     timeout_min: 4300
     cpus_per_task: 10
