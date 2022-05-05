@@ -1,6 +1,6 @@
-numpy=1.19.2
-absl-py=0.13.0
-scikit-image=0.18.1
+numpy==1.19.2
+absl-py==0.13.0
+scikit-image==0.18.1
 git+https://github.com/deepmind/dm_control.git
 termcolor==1.1.0
 tb-nightly
