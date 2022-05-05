@@ -50,3 +50,9 @@ class ForwardEncoderLoss(ExtraLoss):
 class NoopEncoderLoss(ExtraLoss):
     def __init__(self):
         super().__init__(0)
+
+class NoopOpt:
+    def step(self):
+        pass
+    def zero_grad(self, set_to_none):
+        pass

@@ -9,7 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import utils
-from encoder_losses import ForwardEncoderLoss, NoopEncoderLoss
+from encoder_losses import ForwardEncoderLoss, NoopEncoderLoss, NoopOpt
 
 
 class RandomShiftsAug(nn.Module):
@@ -160,7 +160,9 @@ class DrQV2Agent:
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=lr)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=lr)
         # optimizers::extra_losses
-        self.critic_extra_opt = torch.optim.Adam(self.critic_extra.parameters(), lr=lr)
+        self.critic_extra_opt = NoopOpt()
+        if encoder_losses.fwd_loss:
+            self.critic_extra_opt = torch.optim.Adam(self.critic_extra.parameters(), lr=lr)
 
         # data augmentation
         self.aug = RandomShiftsAug(pad=4)
