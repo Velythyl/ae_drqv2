@@ -46,7 +46,7 @@ agent:
   stddev_schedule: ${stddev_schedule}
   stddev_clip: 0.3
   encoder_losses:
-    fwd_loss: true
+    fwd_loss: false
     action_loss: false
 
 
