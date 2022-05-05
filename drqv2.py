@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import utils
+from encoder_losses import ForwardEncoderLoss, NoopEncoderLoss
 
 
 class RandomShiftsAug(nn.Module):
@@ -112,19 +113,23 @@ class Critic(nn.Module):
 
         self.apply(utils.weight_init)
 
-    def forward(self, obs, action):
-        h = self.trunk(obs)
+    def detached_trunk(self, obs):
+        with torch.no_grad():
+            return self.trunk(obs)
+
+    def forward(self, obs, action, already_trunked=False):
+        h = obs if already_trunked else self.trunk(obs)
+
         h_action = torch.cat([h, action], dim=-1)
         q1 = self.Q1(h_action)
         q2 = self.Q2(h_action)
 
         return q1, q2
 
-
 class DrQV2Agent:
     def __init__(self, obs_shape, action_shape, device, lr, feature_dim,
                  hidden_dim, critic_target_tau, num_expl_steps,
-                 update_every_steps, stddev_schedule, stddev_clip, use_tb):
+                 update_every_steps, stddev_schedule, stddev_clip, use_tb, encoder_losses):
         self.device = device
         self.critic_target_tau = critic_target_tau
         self.update_every_steps = update_every_steps
@@ -143,11 +148,19 @@ class DrQV2Agent:
         self.critic_target = Critic(self.encoder.repr_dim, action_shape,
                                     feature_dim, hidden_dim).to(device)
         self.critic_target.load_state_dict(self.critic.state_dict())
+        # models::extra_losses
+        self.critic_extra = NoopEncoderLoss()
+        self.trunk_lambda = nn.Identity()
+        if encoder_losses.fwd_loss:
+            self.critic_extra = ForwardEncoderLoss(feature_dim, action_shape, hidden_dim).to(device)
+            self.trunk_lambda = self.critic.detached_trunk
 
         # optimizers
         self.encoder_opt = torch.optim.Adam(self.encoder.parameters(), lr=lr)
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=lr)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=lr)
+        # optimizers::extra_losses
+        self.critic_extra_opt = torch.optim.Adam(self.critic_extra.parameters(), lr=lr)
 
         # data augmentation
         self.aug = RandomShiftsAug(pad=4)
@@ -185,7 +198,8 @@ class DrQV2Agent:
             target_V = torch.min(target_Q1, target_Q2)
             target_Q = reward + (discount * target_V)
 
-        Q1, Q2 = self.critic(obs, action)
+        obs_trunk = self.critic.trunk(obs)
+        Q1, Q2 = self.critic(obs_trunk, action, already_trunked=True)
         critic_loss = F.mse_loss(Q1, target_Q) + F.mse_loss(Q2, target_Q)
 
         if self.use_tb:
@@ -194,12 +208,28 @@ class DrQV2Agent:
             metrics['critic_q2'] = Q2.mean().item()
             metrics['critic_loss'] = critic_loss.item()
 
+        next_obs_trunk = self.trunk_lambda(next_obs)
+        extra_loss, extra_metrics = self.critic_extra(obs_trunk, action, reward, discount, next_obs_trunk, step)
+        metrics = {**metrics, **extra_metrics}   # merge
+
+        # extra encoder loss
+        """
+        obs_trunk = self.critic.trunk(obs)
+        with torch.no_grad():
+            n_obs_trunk = self.critic.trunk(next_obs)
+        obs_trunk_act = torch.cat((obs_trunk, action), dim=1)
+        pred_n_obs_trunk = self.critic.fwd(obs_trunk_act)
+        encoder_loss = F.mse_loss(pred_n_obs_trunk, n_obs_trunk)
+        """
+
         # optimize encoder and critic
         self.encoder_opt.zero_grad(set_to_none=True)
         self.critic_opt.zero_grad(set_to_none=True)
-        critic_loss.backward()
+        self.critic_extra_opt.zero_grad(set_to_none=True)
+        (critic_loss + extra_loss).backward()
         self.critic_opt.step()
         self.encoder_opt.step()
+        self.critic_extra_opt.step()
 
         return metrics
 

@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - task@_global_: quadruped_walk
+  - task@_global_: cartpole_swingup
   - override hydra/launcher: submitit_local
 
 # task settings
@@ -45,18 +45,22 @@ agent:
   feature_dim: ${feature_dim}
   stddev_schedule: ${stddev_schedule}
   stddev_clip: 0.3
+  encoder_losses:
+    fwd_loss: true
+    action_loss: false
+
 
 hydra:
   run:
     dir: ./exp_local/${now:%Y.%m.%d}/${now:%H%M%S}_${hydra.job.override_dirname}
   sweep:
-    dir: ./exp/${now:%Y.%m.%d}/${now:%H%M}_${agent_cfg.experiment}
-    subdir: ${hydra.job.num}
+    dir: ./exp/${now:%Y.%m.%d}/${now:%H%M}
+    subdir: ${hydra.job.override_dirname}
   launcher:
     timeout_min: 4300
     cpus_per_task: 10
     gpus_per_node: 1
     tasks_per_node: 1
-    mem_gb: 160
+    mem_gb: 32
     nodes: 1
-    submitit_folder: ./exp/${now:%Y.%m.%d}/${now:%H%M%S}_${agent_cfg.experiment}/.slurm
+    submitit_folder: ./exp/${now:%Y.%m.%d}/${now:%H%M%S}_${hydra.job.override_dirname}/.slurm
