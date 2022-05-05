@@ -1,7 +1,7 @@
 defaults:
   - _self_
   - task@_global_: cartpole_swingup
-  - override hydra/launcher: submitit_local
+  # - override hydra/launcher: submitit_local
 
 # task settings
 frame_stack: 3
@@ -55,11 +55,11 @@ hydra:
     dir: ./exp_local/${now:%Y.%m.%d}/${now:%H%M%S}_${hydra.job.override_dirname}
   sweep:
     dir: ./exp/${now:%Y.%m.%d}/${now:%H%M}_${hydra.job.override_dirname}
-  launcher:
-    timeout_min: 4300
-    cpus_per_task: 10
-    gpus_per_node: 1
-    tasks_per_node: 1
-    mem_gb: 32
-    nodes: 1
-    submitit_folder: ./exp/${now:%Y.%m.%d}/${now:%H%M%S}_${hydra.job.override_dirname}/.slurm
+ # launcher:
+   # timeout_min: 4300
+   # cpus_per_task: 10
+   # gpus_per_node: 1
+   # tasks_per_node: 1
+   # mem_gb: 32
+   # nodes: 1
+   # submitit_folder: ./exp/${now:%Y.%m.%d}/${now:%H%M%S}_${hydra.job.override_dirname}/.slurm
