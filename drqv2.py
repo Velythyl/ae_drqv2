@@ -130,6 +130,9 @@ class DrQV2Agent:
     def __init__(self, obs_shape, action_shape, device, lr, feature_dim,
                  hidden_dim, critic_target_tau, num_expl_steps,
                  update_every_steps, stddev_schedule, stddev_clip, use_tb, encoder_losses):
+
+        print(encoder_losses)   # todo rm this
+
         self.device = device
         self.critic_target_tau = critic_target_tau
         self.update_every_steps = update_every_steps
