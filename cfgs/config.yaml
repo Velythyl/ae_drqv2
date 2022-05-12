@@ -2,6 +2,7 @@ defaults:
   - _self_
   - task@_global_: cartpole_swingup
   # - override hydra/launcher: submitit_local
+  # - override hydra/launcher: submitit_slurm
 
 # task settings
 frame_stack: 3
@@ -48,6 +49,7 @@ agent:
   encoder_losses:
     fwd_loss: false
     action_loss: false
+    inverse_loss: false
 
 
 hydra:

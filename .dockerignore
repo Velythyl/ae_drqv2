@@ -1,0 +1,9 @@
+*.mp4
+*tfevents*
+exp*/*/*.hydra
+*.log
+exp
+exp_*
+venv
+__pycache__
+*.csv
