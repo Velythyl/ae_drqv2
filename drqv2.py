@@ -217,6 +217,16 @@ class DrQV2Agent:
         self.critic_opt.zero_grad(set_to_none=True)
         self.critic_extra_opt.zero_grad(set_to_none=True)
         (critic_loss + extra_loss).backward()
+        """
+        for param in self.encoder.parameters():
+            temp = torch.zeros(param.grad.shape)
+            temp[param.grad != 0] += 1
+            print(torch.any(temp >= 1))
+        for param in self.critic.parameters():
+            temp = torch.zeros(param.grad.shape)
+            temp[param.grad != 0] += 1
+            print(torch.any(temp >= 1))
+        exit()"""
         self.critic_opt.step()
         self.encoder_opt.step()
         self.critic_extra_opt.step()
@@ -258,22 +268,22 @@ class DrQV2Agent:
             batch, self.device)
 
         # augment
-        obs = self.aug(obs.float())
-        next_obs = self.aug(next_obs.float())
+        aug_obs = self.aug(obs.float())
+        aug_next_obs = self.aug(next_obs.float())
         # encode
-        obs = self.encoder(obs)
+        aug_obs = self.encoder(aug_obs)
         with torch.no_grad():
-            next_obs = self.encoder(next_obs)
+            aug_next_obs = self.encoder(aug_next_obs)
 
         if self.use_tb:
             metrics['batch_reward'] = reward.mean().item()
 
         # update critic
         metrics.update(
-            self.update_critic(obs, action, reward, discount, next_obs, step))
+            self.update_critic(aug_obs, action, reward, discount, aug_next_obs, step))
 
         # update actor
-        metrics.update(self.update_actor(obs.detach(), step))
+        metrics.update(self.update_actor(aug_obs.detach(), step))
 
         # update critic target
         utils.soft_update_params(self.critic, self.critic_target,

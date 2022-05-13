@@ -49,8 +49,8 @@ class ForwardEncoderLoss(ExtraLoss):
             nn.ReLU(inplace=True), nn.Linear(hidden_dim, feature_dim))
 
     def _loss(self, transition):
-        trunked_obs = transition.trunk(self.for_critic)
-        detached_trunked_next_obs = transition.trunk_detached(self.for_critic)
+        trunked_obs = transition.trunk_static(self.for_critic)
+        detached_trunked_next_obs = transition.trunk_static(self.for_critic)
         action = transition.action
 
         obs_trunk_act = torch.cat((trunked_obs, action), dim=1)
@@ -70,7 +70,7 @@ class InverseEncoderLoss(ExtraLoss):
 
     def _loss(self, transition):
         trunked_obs = transition.trunk(self.for_critic)
-        detached_trunked_next_obs = transition.trunk_detached(self.for_critic)
+        detached_trunked_next_obs = transition.trunk_static(self.for_critic)
         action = transition.action
 
         obs_trunk_act = torch.cat((trunked_obs, detached_trunked_next_obs), dim=1)
@@ -90,7 +90,7 @@ class ActionDistanceEncoderLoss(ExtraLoss):
 
     def _loss(self, transition):
         trunked_obs = transition.trunk(self.for_critic)
-        detached_trunked_next_obs = transition.trunk_detached(self.for_critic)
+        detached_trunked_next_obs = transition.trunk_static(self.for_critic)
         action = transition.action
 
         obs_trunk_cat = torch.cat((trunked_obs, detached_trunked_next_obs), dim=1)
@@ -115,9 +115,9 @@ class Transition:
         self.step = step
 
         self._critic_trunked = None
-        self._critic_trunked_detached = None
+        self._critic_trunked_static = None
         self._actor_trunked = None
-        self._actor_trunked_detached = None
+        self._actor_trunked_static = None
 
     def trunk(self, for_critic):
         if for_critic:
@@ -125,11 +125,11 @@ class Transition:
         else:
             return self.actor_trunk # todo ? change to detached version ? since we never change actor weights from here
 
-    def trunk_detached(self, for_critic):
+    def trunk_static(self, for_critic):
         if for_critic:
-            return self.critic_trunk_detached
+            return self.critic_trunk_static
         else:
-            return self.actor_trunk_detached
+            return self.actor_trunk_static
 
     #@cached_property
     @property
@@ -140,11 +140,12 @@ class Transition:
 
     #@cached_property
     @property
-    def actor_trunk_detached(self):
-        if self._actor_trunked_detached is None:
-            with torch.no_grad():
-                self._actor_trunked_detached = self.actor.trunk(self.obs)
-        return self._actor_trunked_detached
+    def actor_trunk_static(self):
+        if self._actor_trunked_static is None:
+            self.actor.trunk.requires_grad = False
+            self._actor_trunked_static = self.actor.trunk(self.obs)
+            self.actor.trunk.requires_grad = True
+        return self._actor_trunked_static
 
     #@cached_property
     @property
@@ -155,11 +156,12 @@ class Transition:
 
    # @cached_property
     @property
-    def critic_trunk_detached(self):
-        if self._critic_trunked_detached is None:
-            with torch.no_grad():
-                self._critic_trunked_detached = self.critic.trunk(self.obs)
-        return self._critic_trunked_detached
+    def critic_trunk_static(self):
+        if self._critic_trunked_static is None:
+            self.critic.trunk.requires_grad = False
+            self._critic_trunked_static = self.critic.trunk(self.obs)
+            self.critic.trunk.requires_grad = True
+        return self._critic_trunked_static
 
 class TransitionFactory:
     def __init__(self, actor, critic, base):
@@ -188,7 +190,7 @@ def build_losses(feature_dim, action_shape, hidden_dim, device, encoder_losses_b
 
     def instantiate(func, own_mixin):
         if own_mixin:
-            return func(base, True, feature_dim, action_shape, hidden_dim, own_mixin=own_mixin).to(device)
+            return func(base, False, feature_dim, action_shape, hidden_dim, own_mixin=own_mixin).to(device)
         else:
             return base
 
