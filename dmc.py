@@ -215,8 +215,4 @@ def make(name, frame_stack, action_repeat, seed, egocentric):
     # stack several frames
     env = FrameStackWrapper(env, frame_stack, pixels_key)
     env = ExtendedTimeStepWrapper(env)
-    x = env.reset()
-    img = x.observation[-3:]
-    img = np.transpose(img, (1,2,0))
-    Image.fromarray(img).show()
     return env
