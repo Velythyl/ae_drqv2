@@ -53,9 +53,9 @@ class Workspace:
         self.logger = Logger(self.work_dir, use_tb=self.cfg.use_tb)
         # create envs
         self.train_env = dmc.make(self.cfg.task_name, self.cfg.frame_stack,
-                                  self.cfg.action_repeat, self.cfg.seed)
+                                  self.cfg.action_repeat, self.cfg.seed, self.cfg.egocentric)
         self.eval_env = dmc.make(self.cfg.task_name, self.cfg.frame_stack,
-                                 self.cfg.action_repeat, self.cfg.seed)
+                                 self.cfg.action_repeat, self.cfg.seed, self.cfg.egocentric)
         # create replay buffer
         data_specs = (self.train_env.observation_spec(),
                       self.train_env.action_spec(),
@@ -71,8 +71,10 @@ class Workspace:
             self.cfg.save_snapshot, self.cfg.nstep, self.cfg.discount)
         self._replay_iter = None
 
-        self.video_recorder = VideoRecorder(
+        self.video_recorder_scene = VideoRecorder(
             self.work_dir if self.cfg.save_video else None)
+        self.video_recorder_ego = VideoRecorder(
+            self.work_dir if self.cfg.save_video else None, camera_id="egocentric")
         self.train_video_recorder = TrainVideoRecorder(
             self.work_dir if self.cfg.save_train_video else None)
 
@@ -101,19 +103,27 @@ class Workspace:
 
         while eval_until_episode(episode):
             time_step = self.eval_env.reset()
-            self.video_recorder.init(self.eval_env, enabled=(episode == 0))
+
+            self.video_recorder_scene.init(self.eval_env, enabled=(episode == 0))
+            self.video_recorder_ego.init(self.eval_env, enabled=(episode == 0))
+
             while not time_step.last():
                 with torch.no_grad(), utils.eval_mode(self.agent):
                     action = self.agent.act(time_step.observation,
                                             self.global_step,
                                             eval_mode=True)
                 time_step = self.eval_env.step(action)
-                self.video_recorder.record(self.eval_env)
+
+                self.video_recorder_scene.record(self.eval_env)
+                self.video_recorder_ego.record(self.eval_env)
+
                 total_reward += time_step.reward
                 step += 1
 
             episode += 1
-            self.video_recorder.save(f'{self.global_frame}.mp4')
+
+            self.video_recorder_scene.save(f'{self.global_frame}.mp4')
+            self.video_recorder_ego.save(f'{self.global_frame}.mp4')
 
         with self.logger.log_and_dump_ctx(self.global_frame, ty='eval') as log:
             log('episode_reward', total_reward / episode)

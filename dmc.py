@@ -7,6 +7,7 @@ from typing import Any, NamedTuple
 
 import dm_env
 import numpy as np
+from PIL import Image
 from dm_control import manipulation, suite
 from dm_control.suite.wrappers import action_scale, pixels
 from dm_env import StepType, specs
@@ -180,7 +181,7 @@ class ExtendedTimeStepWrapper(dm_env.Environment):
         return getattr(self._env, name)
 
 
-def make(name, frame_stack, action_repeat, seed):
+def make(name, frame_stack, action_repeat, seed, egocentric):
     domain, task = name.split('_', 1)
     # overwrite cup to ball_in_cup
     domain = dict(cup='ball_in_cup').get(domain, domain)
@@ -201,13 +202,21 @@ def make(name, frame_stack, action_repeat, seed):
     env = action_scale.Wrapper(env, minimum=-1.0, maximum=+1.0)
     # add renderings for clasical tasks
     if (domain, task) in suite.ALL_TASKS:
+        # EGOCENTRIC?
+
         # zoom in camera for quadruped
         camera_id = dict(quadruped=2).get(domain, 0)
         render_kwargs = dict(height=84, width=84, camera_id=camera_id)
+        if egocentric:
+            render_kwargs['camera_id'] = "egocentric"
         env = pixels.Wrapper(env,
                              pixels_only=True,
                              render_kwargs=render_kwargs)
     # stack several frames
     env = FrameStackWrapper(env, frame_stack, pixels_key)
     env = ExtendedTimeStepWrapper(env)
+    x = env.reset()
+    img = x.observation[-3:]
+    img = np.transpose(img, (1,2,0))
+    Image.fromarray(img).show()
     return env
