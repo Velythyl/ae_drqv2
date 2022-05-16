@@ -53,9 +53,9 @@ class Workspace:
         self.logger = Logger(self.work_dir, use_tb=self.cfg.use_tb)
         # create envs
         self.train_env = dmc.make(self.cfg.task_name, self.cfg.frame_stack,
-                                  self.cfg.action_repeat, self.cfg.seed)
+                                  self.cfg.action_repeat, self.cfg.seed, self.cfg.egocentric)
         self.eval_env = dmc.make(self.cfg.task_name, self.cfg.frame_stack,
-                                 self.cfg.action_repeat, self.cfg.seed)
+                                 self.cfg.action_repeat, self.cfg.seed, self.cfg.egocentric)
         # create replay buffer
         data_specs = (self.train_env.observation_spec(),
                       self.train_env.action_spec(),
