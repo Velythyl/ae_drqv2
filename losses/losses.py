@@ -202,7 +202,7 @@ def build_losses(feature_dim, action_shape, hidden_dim, device, encoder_losses_b
 
 
     critic_extra_opt = NoopOpt()
-    if isinstance(base, NoopEncoderLoss):
+    if not isinstance(base, NoopEncoderLoss):
         critic_extra_opt = torch.optim.Adam(base.parameters(), lr=lr)
 
     return TransitionFactory(actor, critic, base), critic_extra_opt
