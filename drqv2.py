@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import utils
+from activations import string2activation
 from losses.losses import NoopEncoderLoss, NoopOpt, build_losses
 
 
@@ -67,17 +68,21 @@ class Encoder(nn.Module):
 
 
 class Actor(nn.Module):
-    def __init__(self, repr_dim, action_shape, feature_dim, hidden_dim):
+    def __init__(self, repr_dim, action_shape, feature_dim, hidden_dim, actor_activation):
         super().__init__()
 
         self.trunk = nn.Sequential(nn.Linear(repr_dim, feature_dim),
                                    nn.LayerNorm(feature_dim), nn.Tanh())
 
+        ActorActivation = string2activation(actor_activation, hidden_dim)
+
         self.policy = nn.Sequential(nn.Linear(feature_dim, hidden_dim),
-                                    nn.ReLU(inplace=True),
+                                    ActorActivation(),
                                     nn.Linear(hidden_dim, hidden_dim),
-                                    nn.ReLU(inplace=True),
+                                    ActorActivation(),
                                     nn.Linear(hidden_dim, action_shape[0]))
+
+        self.mu_activation = nn.Tanh() if actor_activation is not "snake" else ActorActivation()
 
         self.apply(utils.weight_init)
 
@@ -85,7 +90,7 @@ class Actor(nn.Module):
         h = self.trunk(obs)
 
         mu = self.policy(h)
-        mu = torch.tanh(mu)
+        mu = self.mu_activation(mu)
         return mu
 
     def forward(self, obs, std):
@@ -129,7 +134,7 @@ class Critic(nn.Module):
 class DrQV2Agent:
     def __init__(self, obs_shape, action_shape, device, lr, feature_dim,
                  hidden_dim, critic_target_tau, num_expl_steps,
-                 update_every_steps, stddev_schedule, stddev_clip, use_tb, encoder_losses):
+                 update_every_steps, stddev_schedule, stddev_clip, use_tb, encoder_losses, actor_activation):
 
         print(encoder_losses)  # todo rm this
 
@@ -144,7 +149,7 @@ class DrQV2Agent:
         # models
         self.encoder = Encoder(obs_shape).to(device)
         self.actor = Actor(self.encoder.repr_dim, action_shape, feature_dim,
-                           hidden_dim).to(device)
+                           hidden_dim, actor_activation).to(device)
 
         self.critic = Critic(self.encoder.repr_dim, action_shape, feature_dim,
                              hidden_dim).to(device)
