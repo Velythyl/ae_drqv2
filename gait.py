@@ -10,18 +10,20 @@ class Gait(nn.Module):
         self.mixture_dim = (action_shape[0], nb_gaussians)
 
         # initial period is to have a ~25 frame period. Learnable parameter.
-        self.period_b = nn.Parameter(torch.tensor(0.25), requires_grad=True)
+        self.period_b = nn.Parameter(torch.tensor(0.5), requires_grad=True)
 
         # same init as
+        mu_matrix_init = np.linspace(0, 2*np.pi, nb_gaussians)
+        mu_matrix_init = torch.tensor(action_shape[0]*[mu_matrix_init])
         # https://github.com/JeremyLinux/PyTorch-Radial-Basis-Function-Layer/blob/master/Torch%20RBF/torch_rbf.py
-        self.mu_matrix = nn.Parameter(torch.linspace(0, 2*np.pi, nb_gaussians).expand(*self.mixture_dim), requires_grad=True)
+        self.mu_matrix = nn.Parameter(mu_matrix_init.float(), requires_grad=True)
         self.sigma_matrix = nn.Parameter(-torch.ones(self.mixture_dim), requires_grad=True)
 
         self.weights = nn.Parameter(torch.normal(0,1,self.mixture_dim), requires_grad=True)
 
     @property
     def period(self):
-        return torch.floor((np.pi * 2) / self.period_b) # .clone().detach().item()
+        return (np.pi * 2) / self.period_b # .clone().detach().item()
 
     def frame2percent(self, frame_nb: torch.Tensor):    # only to be used as reference for the actor to know which part of the cycle we're in
         return frame_nb / self.period
@@ -38,9 +40,11 @@ class Gait(nn.Module):
         return gaussian
 
     def forward(self, frame_nb):
-        frame_nb = self.frame2percent(frame_nb) * np.pi * 2
+        frame_nb = frame_nb / self.period_b
 
-        frame_nb_batch = frame_nb.repeat(frame_nb.shape[0], *self.mixture_dim)
+       # frame_nb = self.frame2percent(frame_nb) * np.pi * 2
+
+        #frame_nb_batch = frame_nb.repeat(frame_nb, *self.mixture_dim)
 
         frame_nb_batch = frame_nb.unsqueeze(-1).unsqueeze(-1).expand(frame_nb.shape[0], *self.mixture_dim)
 
@@ -84,6 +88,8 @@ if __name__ == "__main__":
     plt.plot(gait(x).detach().cpu().numpy())
     plt.show()
 
+    print(gait.period)
+
     mse = torch.nn.MSELoss()
     for i in range(10000):
         y_z_pred = gait(x)
@@ -92,6 +98,8 @@ if __name__ == "__main__":
         loss.backward()
         opt.step()
         print(loss.detach().item())
+
+    print(gait.period)
 
     plt.plot(x, y)
     plt.plot(y_z_pred.detach().cpu().numpy())
