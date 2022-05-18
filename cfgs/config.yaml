@@ -40,6 +40,7 @@ agent:
   device: ${device}
   lr: ${lr}
   actor_activation: relu
+  with_gait: false
   critic_target_tau: 0.01
   update_every_steps: 2
   use_tb: ${use_tb}

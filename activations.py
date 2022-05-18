@@ -70,3 +70,5 @@ def string2activation(string, in_features):
         "snake": functools.partial(Snake, in_features=in_features)
     }
     return string2act[string.lower()]
+
+

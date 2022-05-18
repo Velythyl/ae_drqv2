@@ -68,7 +68,7 @@ class Encoder(nn.Module):
 
 
 class Actor(nn.Module):
-    def __init__(self, repr_dim, action_shape, feature_dim, hidden_dim, actor_activation):
+    def __init__(self, repr_dim, action_shape, feature_dim, hidden_dim, actor_activation, gait):
         super().__init__()
 
         self.trunk = nn.Sequential(nn.Linear(repr_dim, feature_dim),
@@ -82,7 +82,9 @@ class Actor(nn.Module):
                                     ActorActivation(),
                                     nn.Linear(hidden_dim, action_shape[0]))
 
-        self.mu_activation = nn.Tanh() if actor_activation is not "snake" else ActorActivation()
+        self.mu_activation = nn.Tanh() if actor_activation != "snake" else ActorActivation()
+
+        self.gait = gait
 
         self.apply(utils.weight_init)
 
@@ -93,13 +95,64 @@ class Actor(nn.Module):
         mu = self.mu_activation(mu)
         return mu
 
-    def forward(self, obs, std):
+    def forward(self, obs, std, frame_nb):
         mu = self.mu(obs)
+        mu = mu + self.gait(frame_nb)
 
         std = torch.ones_like(mu) * std
 
         dist = utils.TruncatedNormal(mu, std)
         return dist
+
+class DistributionAddition:
+    def __init__(self, distr, add):
+        self.distr = distr
+        self.add = add
+
+    def sample(self, clip):
+        return self.distr.sample(clip) + self.add
+
+    @property
+    def mean(self):
+        return self.distr.mean + self.add
+
+    def log_prob(self,x):
+        return self.distr.log_prob(x) + self.add
+
+class GaussianMixture(nn.Module):
+    def __init__(self, nb_gaussians, nb_dim):
+        super().__init__()
+        self.mu_matrix = nn.Parameter(torch.ones((nb_dim, nb_gaussians)), requires_grad=True)
+        self.sigma_matrix = nn.Parameter(-torch.ones((nb_dim, nb_gaussians)), requires_grad=True)
+
+        self.nb_gaussians, nb_dim = nb_gaussians, nb_dim
+
+    def forward(self, x):
+        x_mu = x - self.mu_matrix
+        x_mu_pow = x_mu.pow(2)
+        scaled_x_mu_pow = torch.mul(self.sigma_matrix, x_mu_pow)
+        gaussian = torch.exp(scaled_x_mu_pow)
+        return gaussian
+
+class Gait(nn.Module):
+    def __init__(self, nb_gaussians, action_shape):
+        super().__init__()
+        self.mixture = GaussianMixture(nb_gaussians, action_shape[0])
+        self.weights = nn.Parameter(torch.ones((action_shape[0], nb_gaussians)), requires_grad=True)
+
+    def forward(self, x):
+        x = torch.tensor(x)
+        x = torch.cos(0.25 * x)
+
+        mixed = self.mixture(x)
+
+        mixed_weighted = torch.mul(mixed, self.weights)
+
+        mixed = torch.sum(mixed, dim=1)
+        mixed_weighted = torch.sum(mixed_weighted, dim=1)
+
+        activations = mixed_weighted / mixed
+        return activations
 
 
 class Critic(nn.Module):
@@ -134,7 +187,7 @@ class Critic(nn.Module):
 class DrQV2Agent:
     def __init__(self, obs_shape, action_shape, device, lr, feature_dim,
                  hidden_dim, critic_target_tau, num_expl_steps,
-                 update_every_steps, stddev_schedule, stddev_clip, use_tb, encoder_losses, actor_activation):
+                 update_every_steps, stddev_schedule, stddev_clip, use_tb, encoder_losses, actor_activation, with_gait):
 
         print(encoder_losses)  # todo rm this
 
@@ -147,10 +200,10 @@ class DrQV2Agent:
         self.stddev_clip = stddev_clip
 
         # models
+        self.gait = Gait(25, action_shape) if with_gait else lambda x: 0
         self.encoder = Encoder(obs_shape).to(device)
         self.actor = Actor(self.encoder.repr_dim, action_shape, feature_dim,
-                           hidden_dim, actor_activation).to(device)
-
+                           hidden_dim, actor_activation, self.gait).to(device)
         self.critic = Critic(self.encoder.repr_dim, action_shape, feature_dim,
                              hidden_dim).to(device)
         self.critic_target = Critic(self.encoder.repr_dim, action_shape,
@@ -161,6 +214,7 @@ class DrQV2Agent:
         self.encoder_opt = torch.optim.Adam(self.encoder.parameters(), lr=lr)
         self.actor_opt = torch.optim.Adam(self.actor.parameters(), lr=lr)
         self.critic_opt = torch.optim.Adam(self.critic.parameters(), lr=lr)
+        self.gait_opt = torch.optim.Adam(self.gait.parameters(), lr=lr) if isinstance(self.gait, Gait) else NoopOpt()
 
         # extra_losses
         # extra losses need access to critic's trunk but the weights belong to critic, so we wrap it in a lambda
@@ -178,11 +232,11 @@ class DrQV2Agent:
         self.actor.train(training)
         self.critic.train(training)
 
-    def act(self, obs, step, eval_mode):
+    def act(self, obs, step, frame_nb, eval_mode):
         obs = torch.as_tensor(obs, device=self.device)
         obs = self.encoder(obs.unsqueeze(0))
         stddev = utils.schedule(self.stddev_schedule, step)
-        dist = self.actor(obs, stddev)
+        dist = self.actor(obs, stddev, frame_nb)
         if eval_mode:
             action = dist.mean
         else:
@@ -194,12 +248,12 @@ class DrQV2Agent:
     def encoder_loss(self, obs, action, reward, next_obs, step):
         pass
 
-    def update_critic(self, obs, action, reward, discount, next_obs, step):
+    def update_critic(self, obs, action, reward, discount, next_obs, step, frame_nb):
         metrics = dict()
 
         with torch.no_grad():
             stddev = utils.schedule(self.stddev_schedule, step)
-            dist = self.actor(next_obs, stddev)
+            dist = self.actor(next_obs, stddev, frame_nb)
             next_action = dist.sample(clip=self.stddev_clip)
             target_Q1, target_Q2 = self.critic_target(next_obs, next_action)
             target_V = torch.min(target_Q1, target_Q2)
@@ -238,11 +292,11 @@ class DrQV2Agent:
 
         return metrics
 
-    def update_actor(self, obs, step):
+    def update_actor(self, obs, step, frame_nb):
         metrics = dict()
 
         stddev = utils.schedule(self.stddev_schedule, step)
-        dist = self.actor(obs, stddev)
+        dist = self.actor(obs, stddev, frame_nb)
         action = dist.sample(clip=self.stddev_clip)
         log_prob = dist.log_prob(action).sum(-1, keepdim=True)
         Q1, Q2 = self.critic(obs, action)
@@ -269,8 +323,9 @@ class DrQV2Agent:
             return metrics
 
         batch = next(replay_iter)
-        obs, action, reward, discount, next_obs = utils.to_torch(
+        obs, action, reward, discount, next_obs, frame_nb = utils.to_torch(
             batch, self.device)
+
 
         # augment
         aug_obs = self.aug(obs.float())
@@ -285,10 +340,10 @@ class DrQV2Agent:
 
         # update critic
         metrics.update(
-            self.update_critic(aug_obs, action, reward, discount, aug_next_obs, step))
+            self.update_critic(aug_obs, action, reward, discount, aug_next_obs, step, frame_nb))
 
         # update actor
-        metrics.update(self.update_actor(aug_obs.detach(), step))
+        metrics.update(self.update_actor(aug_obs.detach(), step, frame_nb))
 
         # update critic target
         utils.soft_update_params(self.critic, self.critic_target,

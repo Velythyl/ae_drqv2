@@ -60,7 +60,7 @@ class Workspace:
         data_specs = (self.train_env.observation_spec(),
                       self.train_env.action_spec(),
                       specs.Array((1,), np.float32, 'reward'),
-                      specs.Array((1,), np.float32, 'discount'))
+                      specs.Array((1,), np.float32, 'discount'), specs.Array((1,),np.int, 'step_nb'))
 
         self.replay_storage = ReplayBufferStorage(data_specs,
                                                   self.work_dir / 'buffer')
@@ -111,6 +111,7 @@ class Workspace:
                 with torch.no_grad(), utils.eval_mode(self.agent):
                     action = self.agent.act(time_step.observation,
                                             self.global_step,
+                                            time_step.step_nb,
                                             eval_mode=True)
                 time_step = self.eval_env.step(action)
 
@@ -184,6 +185,7 @@ class Workspace:
             with torch.no_grad(), utils.eval_mode(self.agent):
                 action = self.agent.act(time_step.observation,
                                         self.global_step,
+                                        time_step.step_nb,
                                         eval_mode=False)
 
             # try to update the agent
