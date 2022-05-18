@@ -215,7 +215,7 @@ class DrQV2Agent:
         self.stddev_clip = stddev_clip
 
         # models
-        self.gait = Gait(25, action_shape) if with_gait else False
+        self.gait = Gait(100, action_shape) if with_gait else False
         self.with_gait = with_gait
         self.encoder = Encoder(obs_shape).to(device)
         self.actor = Actor(self.encoder.repr_dim, action_shape, feature_dim,
