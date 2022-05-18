@@ -8,7 +8,8 @@ import torch.nn.functional as F
 
 import utils
 from activations import string2activation
-from losses.losses import NoopEncoderLoss, NoopOpt, build_losses
+from gait import Gait
+from losses.losses import NoopOpt, build_losses
 
 
 class RandomShiftsAug(nn.Module):
@@ -89,18 +90,22 @@ class Actor(nn.Module):
         self.apply(utils.weight_init)
 
     def forward(self, obs, std, frame_nb):
+        if not isinstance(frame_nb, torch.Tensor):
+            frame_nb = torch.tensor([[frame_nb]], device='cuda')
+
         h = self.trunk(obs)
 
         if self.gait:
-            phi = self.gait.phi(frame_nb)
-            h = torch.cat((h, phi), dim=1)  # todo dim
+            # todo maybe rescale from 0-1 to -1-1 because the other values in h are -1-1
+            percent = self.gait.frame2percent(frame_nb)
+            h = torch.cat((h, percent), dim=1)
 
         mu = self.policy(h)
         mu = self.mu_activation(mu)
 
         mu = mu
         if self.gait:
-            mu = mu + self.gait(phi)
+            mu = mu + self.gait(frame_nb)
 
         std = torch.ones_like(mu) * std
 
@@ -122,52 +127,6 @@ class DistributionAddition:
 
     def log_prob(self, x):
         return self.distr.log_prob(x) + self.add
-
-
-class Gait(nn.Module):
-    def __init__(self, nb_gaussians, action_shape):
-        super().__init__()
-        self.mixture_dim = (nb_gaussians, action_shape[0])
-
-        # same init as
-        # https://github.com/JeremyLinux/PyTorch-Radial-Basis-Function-Layer/blob/master/Torch%20RBF/torch_rbf.py
-        self.mu_matrix = nn.Parameter(torch.normal(0,1,self.mixture_dim), requires_grad=True)
-        self.sigma_matrix = nn.Parameter(-torch.zeros(self.mixture_dim), requires_grad=True)
-
-        self.weights = nn.Parameter(torch.normal(0,1,self.mixture_dim), requires_grad=True)
-        # initial period is to have a ~25 frame period. Learnable parameter.
-        self.period = nn.Parameter(torch.tensor([[0.25]]), requires_grad=True)
-
-    def phi(self, frame_nb):
-        return torch.cos(self.period * torch.tensor(frame_nb))
-
-    def gaussian_mixture(self, phi):
-        x_mu = phi - self.mu_matrix
-        x_mu_pow = x_mu.pow(2)
-        scaled_x_mu_pow = torch.mul(self.sigma_matrix, x_mu_pow)
-        gaussian = torch.exp(scaled_x_mu_pow)
-        return gaussian
-
-    def forward(self, phi):
-        # reshape phis to compute batches
-        phi_batch = phi.unsqueeze(-1).expand(phi.shape[0], *self.mixture_dim)
-
-        #print(phi_batch.shape)
-
-        mixed = self.gaussian_mixture(phi_batch)
-
-        mixed_weighted = torch.mul(mixed, self.weights)
-
-        #print(mixed.shape)
-
-        mixed = torch.sum(mixed, dim=1)
-        mixed_weighted = torch.sum(mixed_weighted, dim=1)
-
-        activations = mixed_weighted / mixed
-
-        #print(activations.shape)
-
-        return activations
 
 
 class Critic(nn.Module):
@@ -332,6 +291,7 @@ class DrQV2Agent:
             metrics['actor_ent'] = dist.entropy().sum(dim=-1).mean().item()
             if self.with_gait:
                 metrics['actor_gait_period'] = self.actor.gait.period.clone().detach().item()
+                utils.plot_gait(self.actor.gait, step)
 
         return metrics
 

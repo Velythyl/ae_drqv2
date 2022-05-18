@@ -10,6 +10,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from PIL import Image
 from omegaconf import OmegaConf
 from torch import distributions as pyd
 from torch.distributions.utils import _standard_normal
@@ -147,3 +148,43 @@ def schedule(schdl, step):
                 mix = np.clip((step - duration1) / duration2, 0.0, 1.0)
                 return (1.0 - mix) * final1 + mix * final2
     raise NotImplementedError(schdl)
+
+import matplotlib.pyplot as plt
+
+def plot_gait(gait, global_steps):
+    with torch.no_grad():
+        nb_actuators = gait.mixture_dim[1]
+
+        all_frames = torch.arange(0, int(gait.period)).unsqueeze(-1).cuda()
+        #print(all_frames.shape)
+        phis = gait.frame2percent(all_frames)
+        gaits = gait(phis).T.cpu().numpy()
+        x = gait.frame2percent(all_frames).cpu().numpy()
+        period = gait.period.squeeze().item()
+
+    DEBUG = True
+
+    plots = []
+    for actuator_id in range(nb_actuators):
+        y1 = gaits[actuator_id]
+
+       # print(y1)
+
+        plt.plot(x, y1)
+        plt.title(f'A{actuator_id} cycle @ {global_steps} steps')
+        plt.xlabel(f'0-100% is {period} frames')
+        plt.ylabel('activation')
+
+        if DEBUG:
+            plt.show()
+
+       # fig = plt.gcf()
+        #img = Image.frombytes(
+        #    'RGB',
+        #    fig.canvas.get_width_height(),
+        #    fig.canvas.tostring_rgb()
+        #)
+
+        #plots.append(img)
+
+    return plots
