@@ -76,7 +76,7 @@ class Actor(nn.Module):
 
         ActorActivation = string2activation(actor_activation, hidden_dim)
 
-        self.policy = nn.Sequential(nn.Linear(feature_dim, hidden_dim),
+        self.policy = nn.Sequential(nn.Linear(feature_dim if not gait else (feature_dim + 1), hidden_dim),
                                     ActorActivation(),
                                     nn.Linear(hidden_dim, hidden_dim),
                                     ActorActivation(),
@@ -88,21 +88,25 @@ class Actor(nn.Module):
 
         self.apply(utils.weight_init)
 
-    def mu(self, obs):
+    def forward(self, obs, std, frame_nb):
         h = self.trunk(obs)
+
+        if self.gait:
+            phi = self.gait.phi(frame_nb)
+            h = torch.cat((h, phi), dim=1)  # todo dim
 
         mu = self.policy(h)
         mu = self.mu_activation(mu)
-        return mu
 
-    def forward(self, obs, std, frame_nb):
-        mu = self.mu(obs)
-        mu = mu + self.gait(frame_nb)
+        mu = mu
+        if self.gait:
+            mu = mu + self.gait(phi)
 
         std = torch.ones_like(mu) * std
 
         dist = utils.TruncatedNormal(mu, std)
         return dist
+
 
 class DistributionAddition:
     def __init__(self, distr, add):
@@ -116,42 +120,53 @@ class DistributionAddition:
     def mean(self):
         return self.distr.mean + self.add
 
-    def log_prob(self,x):
+    def log_prob(self, x):
         return self.distr.log_prob(x) + self.add
 
-class GaussianMixture(nn.Module):
-    def __init__(self, nb_gaussians, nb_dim):
+
+class Gait(nn.Module):
+    def __init__(self, nb_gaussians, action_shape):
         super().__init__()
-        self.mu_matrix = nn.Parameter(torch.ones((nb_dim, nb_gaussians)), requires_grad=True)
-        self.sigma_matrix = nn.Parameter(-torch.ones((nb_dim, nb_gaussians)), requires_grad=True)
+        self.mixture_dim = (nb_gaussians, action_shape[0])
 
-        self.nb_gaussians, nb_dim = nb_gaussians, nb_dim
+        # same init as
+        # https://github.com/JeremyLinux/PyTorch-Radial-Basis-Function-Layer/blob/master/Torch%20RBF/torch_rbf.py
+        self.mu_matrix = nn.Parameter(torch.normal(0,1,self.mixture_dim), requires_grad=True)
+        self.sigma_matrix = nn.Parameter(-torch.zeros(self.mixture_dim), requires_grad=True)
 
-    def forward(self, x):
-        x_mu = x - self.mu_matrix
+        self.weights = nn.Parameter(torch.normal(0,1,self.mixture_dim), requires_grad=True)
+        # initial period is to have a ~25 frame period. Learnable parameter.
+        self.period = nn.Parameter(torch.tensor([[0.25]]), requires_grad=True)
+
+    def phi(self, frame_nb):
+        return torch.cos(self.period * torch.tensor(frame_nb))
+
+    def gaussian_mixture(self, phi):
+        x_mu = phi - self.mu_matrix
         x_mu_pow = x_mu.pow(2)
         scaled_x_mu_pow = torch.mul(self.sigma_matrix, x_mu_pow)
         gaussian = torch.exp(scaled_x_mu_pow)
         return gaussian
 
-class Gait(nn.Module):
-    def __init__(self, nb_gaussians, action_shape):
-        super().__init__()
-        self.mixture = GaussianMixture(nb_gaussians, action_shape[0])
-        self.weights = nn.Parameter(torch.ones((action_shape[0], nb_gaussians)), requires_grad=True)
+    def forward(self, phi):
+        # reshape phis to compute batches
+        phi_batch = phi.unsqueeze(-1).expand(phi.shape[0], *self.mixture_dim)
 
-    def forward(self, x):
-        x = torch.tensor(x)
-        x = torch.cos(0.25 * x)
+        #print(phi_batch.shape)
 
-        mixed = self.mixture(x)
+        mixed = self.gaussian_mixture(phi_batch)
 
         mixed_weighted = torch.mul(mixed, self.weights)
+
+        #print(mixed.shape)
 
         mixed = torch.sum(mixed, dim=1)
         mixed_weighted = torch.sum(mixed_weighted, dim=1)
 
         activations = mixed_weighted / mixed
+
+        #print(activations.shape)
+
         return activations
 
 
@@ -200,7 +215,8 @@ class DrQV2Agent:
         self.stddev_clip = stddev_clip
 
         # models
-        self.gait = Gait(25, action_shape) if with_gait else lambda x: 0
+        self.gait = Gait(25, action_shape) if with_gait else False
+        self.with_gait = with_gait
         self.encoder = Encoder(obs_shape).to(device)
         self.actor = Actor(self.encoder.repr_dim, action_shape, feature_dim,
                            hidden_dim, actor_activation, self.gait).to(device)
@@ -218,7 +234,8 @@ class DrQV2Agent:
 
         # extra_losses
         # extra losses need access to critic's trunk but the weights belong to critic, so we wrap it in a lambda
-        self.critic_extra, self.critic_extra_opt = build_losses(feature_dim, action_shape, hidden_dim, device, encoder_losses, self.critic, self.actor, lr)
+        self.critic_extra, self.critic_extra_opt = build_losses(feature_dim, action_shape, hidden_dim, device,
+                                                                encoder_losses, self.critic, self.actor, lr)
 
         # data augmentation
         self.aug = RandomShiftsAug(pad=4)
@@ -313,6 +330,8 @@ class DrQV2Agent:
             metrics['actor_loss'] = actor_loss.item()
             metrics['actor_logprob'] = log_prob.mean().item()
             metrics['actor_ent'] = dist.entropy().sum(dim=-1).mean().item()
+            if self.with_gait:
+                metrics['actor_gait_period'] = self.actor.gait.period.clone().detach().item()
 
         return metrics
 
@@ -325,7 +344,6 @@ class DrQV2Agent:
         batch = next(replay_iter)
         obs, action, reward, discount, next_obs, frame_nb = utils.to_torch(
             batch, self.device)
-
 
         # augment
         aug_obs = self.aug(obs.float())
