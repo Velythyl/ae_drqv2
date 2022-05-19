@@ -8,7 +8,7 @@ import torch.nn.functional as F
 
 import utils
 from activations import string2activation
-from gait import Gait
+from gait import Gait, NNGait
 from losses.losses import NoopOpt, build_losses
 
 
@@ -175,8 +175,8 @@ class DrQV2Agent:
         self.stddev_clip = stddev_clip
 
         # models
-        PERIOD = 100
-        self.gait = Gait(3*PERIOD, action_shape, PERIOD) if with_gait else False
+        PERIOD = 50
+        self.gait = NNGait(hidden_dim, action_shape, 50)#Gait(3*PERIOD, action_shape, PERIOD) if with_gait else False
         self.with_gait = with_gait
         self.encoder = Encoder(obs_shape).to(device)
         self.actor = Actor(self.encoder.repr_dim, action_shape, feature_dim,

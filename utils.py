@@ -154,7 +154,7 @@ import matplotlib.pyplot as plt
 
 def plot_gait(gait, global_steps, as_tb=True, save_dir=None):
     with torch.no_grad():
-        nb_actuators = gait.mixture_dim[0]
+        nb_actuators = gait.nb_actuators
 
         period = int(gait.period())+1
         all_frames = torch.linspace(0, period, period*100).unsqueeze(-1).cuda()

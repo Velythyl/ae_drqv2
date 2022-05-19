@@ -10,6 +10,7 @@ TAU = np.pi * 2
 class Gait(nn.Module):
     def __init__(self, nb_gaussians, action_shape, n_frame_repeat):
         super().__init__()
+        self.nb_actuators = action_shape[0]
         self.mixture_dim = (action_shape[0], nb_gaussians)
 
         # initial period is to have a ~25 frame period. Learnable parameter.
@@ -57,10 +58,38 @@ class Gait(nn.Module):
 
         return activations
 
+class NNGait(nn.Module):
+    def __init__(self, hidden_dim, action_shape, n_frame_repeat):
+        super().__init__()
+        self.nb_actuators = action_shape[0]
+        self.gaussian = nn.Sequential(
+            nn.Linear(1, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, action_shape[0]),
+            #nn.Sigmoid()
+        )
+        self.period_b = nn.Parameter(torch.tensor(TAU / n_frame_repeat), requires_grad=True)
+
+    def frame2percent(self, frame_nb):
+        percent = frame_nb * self.period_b
+        percent = torch.remainder(percent, TAU)
+        percent = percent / TAU
+
+        return percent
+
+    def period(self):
+        return TAU / self.period_b.clone().detach().item()
+
+    def forward(self, frame_nb):
+        frame_nb = self.frame2percent(frame_nb)
+        assert len(frame_nb.shape) == 2, "Gait always expects batch as input"
+        return self.gaussian(frame_nb)
 
 if __name__ == "__main__":
     FRAMES = 50
-    gait = Gait(50, [2], n_frame_repeat=100).cuda()
+    gait = NNGait(1000, [2], 10).cuda()#Gait(300, [12], n_frame_repeat=FRAMES).cuda()
     opt = torch.optim.Adam(gait.parameters())
 
     x = torch.arange(0, FRAMES, requires_grad=False).unsqueeze(-1).cuda()
@@ -83,6 +112,11 @@ if __name__ == "__main__":
     for i in range(10000):
         y_z_pred = gait(x)
 
+        #if i % 100 == 0:
+        #    plt.plot(x.cpu().numpy(), y_z_pred.clone().detach().cpu().numpy())
+        #    # plt.plot(x, torch.cos(x))
+        #    plt.plot(x.detach().cpu().numpy(), y_z_pred.detach().cpu().numpy())
+        #    plt.show()
 #        DEBUG = y_z_pred.squeeze().detach().numpy()
 
         loss = mse(y_z_pred, target)
@@ -101,6 +135,6 @@ if __name__ == "__main__":
     plt.plot(x.detach().cpu().numpy(), y_z_pred.detach().cpu().numpy())
     plt.show()
 
-    plot_gait(gait, 10000)
+    plot_gait(gait, 10000, as_tb=False, save_dir='./temp/')
 
     pass
