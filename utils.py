@@ -5,6 +5,7 @@
 import random
 import re
 import time
+from collections import OrderedDict
 
 import numpy as np
 import torch
@@ -151,40 +152,52 @@ def schedule(schdl, step):
 
 import matplotlib.pyplot as plt
 
-def plot_gait(gait, global_steps):
+def plot_gait(gait, global_steps, as_tb=True, save_dir=None):
     with torch.no_grad():
-        nb_actuators = gait.mixture_dim[1]
+        nb_actuators = gait.mixture_dim[0]
 
-        all_frames = torch.arange(0, int(gait.period)).unsqueeze(-1).cuda()
-        #print(all_frames.shape)
-        phis = gait.frame2percent(all_frames)
-        gaits = gait(phis).T.cpu().numpy()
-        x = gait.frame2percent(all_frames).cpu().numpy()
-        period = gait.period.squeeze().item()
+        period = int(gait.period())+1
+        all_frames = torch.linspace(0, period, period*100).unsqueeze(-1).cuda()
 
-    DEBUG = True
+        gaits = gait(all_frames).cpu().numpy()
+        period = round(gait.period())
 
-    plots = []
+        all_frames = all_frames.cpu().numpy()
+
+    DEBUG = False
+
+    plots = {}
     for actuator_id in range(nb_actuators):
-        y1 = gaits[actuator_id]
+        y1 = gaits[:,actuator_id]
 
        # print(y1)
 
-        plt.plot(x, y1)
-        plt.title(f'A{actuator_id} cycle @ {global_steps} steps')
-        plt.xlabel(f'0-100% is {period} frames')
-        plt.ylabel('activation')
+        if DEBUG or not as_tb:
+            plt.plot(all_frames, y1)
+            plt.title(f'A{actuator_id} cycle @ {global_steps} steps')
+            plt.xlabel(f'Period is {period} frames')
+            plt.ylabel('activation')
 
-        if DEBUG:
-            plt.show()
+            if DEBUG:
+                plt.show()
 
-       # fig = plt.gcf()
-        #img = Image.frombytes(
-        #    'RGB',
-        #    fig.canvas.get_width_height(),
-        #    fig.canvas.tostring_rgb()
-        #)
+            plt.savefig(f'{save_dir}/image_actuator{actuator_id}.png')
+            plt.clf()
+            """
+            plt.gcf().canvas.get_renderer()
+            fig = plt.gcf()
+            img = Image.frombytes(
+                'RGB',
+                fig.canvas.get_width_height(),
+                fig.canvas.tostring_rgb()
+            )
 
-        #plots.append(img)
+            #img = np.array(img)
+            #img = torch.tensor(img)
+            #img = img.permute(2,0,1)"""
 
+            #plots[f"image_actuator{actuator_id}"] = img
+        else:
+            tag = f"A{actuator_id}_S{global_steps}_P{period}"
+            plots[tag] = (all_frames.squeeze(), y1.squeeze())
     return plots

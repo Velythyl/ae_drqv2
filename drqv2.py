@@ -98,6 +98,7 @@ class Actor(nn.Module):
         if self.gait:
             # todo maybe rescale from 0-1 to -1-1 because the other values in h are -1-1
             percent = self.gait.frame2percent(frame_nb)
+            percent = percent.expand(percent.shape[0], 1)
             h = torch.cat((h, percent), dim=1)
 
         mu = self.policy(h)
@@ -174,7 +175,8 @@ class DrQV2Agent:
         self.stddev_clip = stddev_clip
 
         # models
-        self.gait = Gait(100, action_shape) if with_gait else False
+        PERIOD = 100
+        self.gait = Gait(3*PERIOD, action_shape, PERIOD) if with_gait else False
         self.with_gait = with_gait
         self.encoder = Encoder(obs_shape).to(device)
         self.actor = Actor(self.encoder.repr_dim, action_shape, feature_dim,
@@ -290,8 +292,11 @@ class DrQV2Agent:
             metrics['actor_logprob'] = log_prob.mean().item()
             metrics['actor_ent'] = dist.entropy().sum(dim=-1).mean().item()
             if self.with_gait:
-                metrics['actor_gait_period'] = self.actor.gait.period.clone().detach().item()
-                utils.plot_gait(self.actor.gait, step)
+                metrics['actor_gait_period'] = self.actor.gait.period()
+                #metrics['actuators'] = utils.plot_gait(self.actor.gait, step, as_tb=True)
+                #metrics.update(
+                #    utils.plot_gait(self.actor.gait, step)
+                #)
 
         return metrics
 

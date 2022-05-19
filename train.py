@@ -132,6 +132,12 @@ class Workspace:
             log('episode', self.global_episode)
             log('step', self.global_step)
 
+        dir = f'{self.work_dir}/actuator_plots/{self.global_frame}/'
+        if not os.path.exists(dir):
+            os.makedirs(dir)
+        plots = utils.plot_gait(self.agent.actor.gait, step, as_tb=False, save_dir=dir)
+
+
     def train(self):
         # predicates
         train_until_step = utils.Until(self.cfg.num_train_frames,
