@@ -135,7 +135,7 @@ class Workspace:
         dir = f'{self.work_dir}/actuator_plots/{self.global_frame}/'
         if not os.path.exists(dir):
             os.makedirs(dir)
-        plots = utils.plot_gait(self.agent.actor.gait, step, as_tb=False, save_dir=dir)
+        plots = utils.plot_gait(self.agent.actor.gait, self.global_frame, as_tb=False, save_dir=dir)
 
 
     def train(self):
