@@ -68,6 +68,7 @@ class NNGait(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, action_shape[0]),
+            nn.Tanh()
             #nn.Sigmoid()
         )
         self.period_b = nn.Parameter(torch.tensor(TAU / n_frame_repeat), requires_grad=True)
