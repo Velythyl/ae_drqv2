@@ -77,7 +77,7 @@ class Actor(nn.Module):
 
         ActorActivation = string2activation(actor_activation, hidden_dim)
 
-        self.policy = nn.Sequential(nn.Linear(feature_dim if not gait else (feature_dim + 1), hidden_dim),
+        self.policy = nn.Sequential(nn.Linear(feature_dim if not gait else (feature_dim + action_shape[0]), hidden_dim),
                                     ActorActivation(),
                                     nn.Linear(hidden_dim, hidden_dim),
                                     ActorActivation(),
@@ -96,17 +96,18 @@ class Actor(nn.Module):
         h = self.trunk(obs)
 
         if self.gait:
+            mu_gait = self.gait(frame_nb)
             # todo maybe rescale from 0-1 to -1-1 because the other values in h are -1-1
-            percent = self.gait.frame2percent(frame_nb)
-            percent = percent.expand(percent.shape[0], 1)
-            h = torch.cat((h, percent), dim=1)
+            #percent = self.gait.frame2percent(frame_nb)
+            #percent = percent.expand(percent.shape[0], 1)
+            h = torch.cat((h, mu_gait), dim=1)
 
         mu = self.policy(h)
         mu = self.mu_activation(mu)
 
         mu = mu
         if self.gait:
-            mu = mu + self.gait(frame_nb)
+            mu = mu + mu_gait
 
         std = torch.ones_like(mu) * std
 
