@@ -176,7 +176,7 @@ class DrQV2Agent:
 
         # models
         PERIOD = 50
-        self.gait = NNGait(hidden_dim, action_shape, PERIOD)#Gait(3*PERIOD, action_shape, PERIOD) if with_gait else False
+        self.gait = NNGait(hidden_dim, action_shape, PERIOD) if with_gait else False#Gait(3*PERIOD, action_shape, PERIOD) if with_gait else False
         self.with_gait = with_gait
         self.encoder = Encoder(obs_shape).to(device)
         self.actor = Actor(self.encoder.repr_dim, action_shape, feature_dim,
